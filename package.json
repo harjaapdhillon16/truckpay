@@ -6,14 +6,22 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
+    "db:migrate:local": "wrangler d1 migrations apply loadwallet-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply loadwallet-db --remote",
+    "demo:keys": "node scripts/generate-demo-keys.mjs .env.local"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",
     "@near-intents-agent-api/sdk": "^0.4.1",
+    "@opennextjs/cloudflare": "^1.20.11",
     "lucide-react": "^1.55.0",
     "motion": "^14.1.0",
-    "next": "16.4.0",
+    "next": "16.3.8",
     "qrcode": "^1.5.4",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -28,8 +36,10 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.4.0",
+    "eslint-config-next": "16.3.8",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.7",
+    "wrangler": "^4.150.0"
   }
 }

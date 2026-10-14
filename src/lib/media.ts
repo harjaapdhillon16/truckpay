@@ -84,13 +84,20 @@ function once(target: HTMLMediaElement, event: string, timeoutMs: number) {
   });
 }
 
-export function currentPosition(): Promise<{ lat: number; lng: number }> {
+export function currentPosition(): Promise<{ lat: number; lng: number; accuracyM: number }> {
   return new Promise((resolve, reject) => {
-    if (!("geolocation" in navigator)) return reject(new Error("This browser has no GPS access."));
+    if (!("geolocation" in navigator)) return reject(new Error("This browser can't share your location."));
     navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      (err) => reject(new Error(err.code === 1 ? "Location permission was denied." : "Could not get your location.")),
-      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 10_000 },
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracyM: pos.coords.accuracy }),
+      (err) =>
+        reject(
+          new Error(
+            err.code === 1
+              ? "Location is blocked. Allow location for this site in your browser settings, then try again."
+              : "Couldn't get your location. Step outside or near a window and try again.",
+          ),
+        ),
+      { enableHighAccuracy: true, timeout: 20_000, maximumAge: 15_000 },
     );
   });
 }

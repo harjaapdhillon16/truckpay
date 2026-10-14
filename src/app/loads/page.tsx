@@ -1,7 +1,5 @@
-import { DashboardWorkspace } from "@/components/dashboard-workspace";
+import { redirect } from "next/navigation";
 
-export const metadata = { title: "All loads · LoadWallet" };
-
-export default function AllLoadsPage() {
-  return <DashboardWorkspace view="loads" />;
+export default function LoadsIndex() {
+  redirect("/");
 }

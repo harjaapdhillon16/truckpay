@@ -2,47 +2,52 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+/** Browser-side access to LoadWallet's API v1. The UI talks to nothing else. */
+
 export class ApiError extends Error {
   constructor(
     public code: string,
     message: string,
+    public status: number,
   ) {
     super(message);
   }
 }
 
-export async function api<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const err = body?.error ?? {};
-    throw new ApiError(err.code ?? `http_${res.status}`, err.detail ?? res.statusText);
+export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`/api/v1${path}`, { ...init, credentials: "same-origin" });
+  const body = (await res.json().catch(() => ({}))) as { error?: { code?: string; detail?: string } };
+  if (res.status === 401 && body.error?.code === "unauthorized" && typeof window !== "undefined") {
+    // A full navigation also drops every poller still holding the signed-out session.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+    window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname)}`);
   }
+  if (!res.ok) throw new ApiError(body.error?.code ?? `http_${res.status}`, body.error?.detail ?? res.statusText, res.status);
   return body as T;
 }
 
-export function postJson<T>(url: string, data: unknown) {
-  return api<T>(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data) });
+export function postJson<T>(path: string, data: unknown = {}, headers: Record<string, string> = {}) {
+  return api<T>(path, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(data) });
 }
 
-/** Fetches `url` now and every `intervalMs` while the tab is visible. */
-export function usePolling<T>(url: string | null, intervalMs: number) {
+/** Fetches `path` now and every `intervalMs` while the tab is visible. */
+export function usePolling<T>(path: string | null, intervalMs: number) {
   const [data, setData] = useState<T | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
   const inFlight = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!url || inFlight.current) return;
+    if (!path || inFlight.current) return;
     inFlight.current = true;
     try {
-      setData(await api<T>(url));
+      setData(await api<T>(path));
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(e instanceof ApiError ? e : new ApiError("network_error", "Can't reach LoadWallet. Check your connection.", 0));
     } finally {
       inFlight.current = false;
     }
-  }, [url]);
+  }, [path]);
 
   useEffect(() => {
     const first = setTimeout(refresh, 0);
@@ -75,4 +80,8 @@ export function clock(iso: string) {
 export function short(value: string | null | undefined, head = 6, tail = 4) {
   if (!value) return "—";
   return value.length <= head + tail + 1 ? value : `${value.slice(0, head)}…${value.slice(-tail)}`;
+}
+
+export function idempotencyKey() {
+  return crypto.randomUUID();
 }

@@ -2,13 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useSyncExternalStore } from "react";
-import { ArrowUpRight, ChevronRight, CircleHelp, ClipboardCheck, LayoutDashboard, Moon, Sun, Truck, Wallet, ShieldCheck } from "lucide-react";
+import { useState, useSyncExternalStore } from "react";
+import { Check, ChevronRight, Copy, FileCode2, LogOut, Moon, ShieldCheck, Sun, Truck } from "lucide-react";
 import { Button } from "@/components/arc/button/button";
-import type { StatusT } from "@/lib/api-types";
-import { usePolling } from "@/lib/client";
-import { STATUS_LABELS, type LoadStatus } from "@/lib/types";
-import { dashboardLabel, dashboardSection } from "@/lib/navigation";
+import { type LoadStatus, STATUS_LABELS } from "@/lib/domain";
+import { api, usePolling } from "@/lib/client";
 
 type Tone = "neutral" | "money" | "warn" | "danger" | "info";
 
@@ -22,7 +20,7 @@ const TONES: Record<Tone, string> = {
 
 export function Pill({ tone = "neutral", children, dot }: { tone?: Tone; children: React.ReactNode; dot?: boolean }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${TONES[tone]}`}>
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${TONES[tone]}`}>
       {dot && <span className="size-1.5 rounded-full bg-current" />}
       {children}
     </span>
@@ -30,15 +28,15 @@ export function Pill({ tone = "neutral", children, dot }: { tone?: Tone; childre
 }
 
 const LOAD_TONES: Record<LoadStatus, Tone> = {
-  provisioning: "info",
+  wallet_pending: "info",
   awaiting_funding: "warn",
   funded: "info",
-  at_pickup: "info",
-  in_transit: "info",
-  at_delivery: "info",
-  pod_review: "warn",
-  delivered: "money",
-  closed: "neutral",
+  verifying: "info",
+  needs_review: "warn",
+  paying: "info",
+  paid: "money",
+  cancelling: "neutral",
+  cancelled: "neutral",
   failed: "danger",
 };
 
@@ -50,29 +48,31 @@ export function LoadStatusPill({ status }: { status: LoadStatus }) {
   );
 }
 
-export function PayoutStatusPill({ status }: { status: string }) {
-  const tone: Tone =
-    status === "SUCCESS" ? "money" : status === "BLOCKED" ? "danger" : status === "FAILED" || status === "REFUNDED" ? "danger" : "info";
-  const label =
-    status === "SUCCESS" ? "Paid" : status === "BLOCKED" ? "Blocked by policy" : status === "PREPARED" || status === "SUBMITTING" ? "Sending" : status.toLowerCase().replace(/_/g, " ");
-  return <Pill tone={tone}>{label}</Pill>;
+export type Health = { ok: boolean; mode: "live" | "simulated"; network: string | null; scale: number; aiReview: string | null; demoCarrier: { near: string | null; base: string | null } | null; geofenceMeters: number; owner: string };
+
+export function useHealth() {
+  return usePolling<Health>("/health", 60_000).data;
 }
 
-export function ModeBadge() {
-  const { data } = usePolling<StatusT>("/api/status", 60_000);
-  if (!data) return <Pill>Connecting…</Pill>;
-  if (data.mode === "live") {
-    const ok = data.network?.status.overall === "operational";
-    return (
-      <Pill tone={data.error ? "danger" : ok ? "money" : "warn"} dot>
-        {data.error ? `Agent Connect error: ${data.error.code}` : `Connected · ${data.network?.network ?? "mainnet"}`}
-      </Pill>
-    );
-  }
+function ConnectionBadge() {
+  const health = useHealth();
+  if (!health) return <Pill>Connecting…</Pill>;
+  if (health.mode === "simulated") return <Pill tone="warn" dot>Simulated wallet</Pill>;
   return (
-    <Pill tone="warn" dot>
-      Demo mode
+    <Pill tone={health.ok ? "money" : "warn"} dot>
+      {health.ok ? `Agent Connect · ${health.network}` : "Agent Connect degraded"}
     </Pill>
+  );
+}
+
+export function ScaleBadge() {
+  const health = useHealth();
+  if (!health || health.scale === 1) return null;
+  const ratio = Math.round(1 / health.scale).toLocaleString();
+  return (
+    <span className="scale-badge" title="Contract dollars settle on-chain at this ratio so the demo moves real USDC in small amounts.">
+      Demo scale 1:{ratio} · $2,500 = {(2500 * health.scale).toFixed(2)} USDC
+    </span>
   );
 }
 
@@ -82,7 +82,7 @@ function subscribeAppearance(onChange: () => void) {
   return () => observer.disconnect();
 }
 
-export function AppHeader({ children }: { children?: React.ReactNode }) {
+export function AppShell({ title, children, actions }: { title: string; children: React.ReactNode; actions?: React.ReactNode }) {
   const pathname = usePathname();
   const dark = useSyncExternalStore(subscribeAppearance, () => document.documentElement.dataset.theme === "dark", () => false);
   function toggleTheme() {
@@ -90,37 +90,38 @@ export function AppHeader({ children }: { children?: React.ReactNode }) {
     document.documentElement.dataset.theme = next ? "dark" : "light";
     localStorage.setItem("loadwallet-theme", next ? "dark" : "light");
   }
-  const nav = [
-    { href: "/", label: "Overview", icon: LayoutDashboard },
-    { href: "/loads", label: "All loads", icon: Truck },
-    { href: "/payments", label: "Payments", icon: Wallet },
-    { href: "/review", label: "Review queue", icon: ClipboardCheck },
-  ];
-  const current = dashboardLabel(pathname);
-  const section = dashboardSection(pathname);
+  async function signOut() {
+    await api("/session", { method: "DELETE" }).catch(() => undefined);
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- full reload clears pollers
+    window.location.assign("/login");
+  }
+  const onLoads = pathname === "/" || pathname.startsWith("/loads");
   return (
     <>
       <a href="#main-content" className="skip-link">Skip to content</a>
       <aside className="app-sidebar">
-        <Link href="/" className="brand"><Logo /><span>LoadWallet<span className="brand-sub">Freight payment workspace</span></span></Link>
-        <div className="workspace-name"><span className="workspace-avatar">B</span><div>Broker workspace<small>Pay on delivery</small></div><ShieldCheck size={16} aria-hidden="true" /></div>
-        <nav aria-label="Main navigation">
-          {nav.map(({ href, label, icon: Icon }) => {
-            const selected = section === href;
-            return <Link key={href} href={href} className={`nav-item ${selected ? "nav-active" : ""}`} aria-current={selected ? "page" : undefined}><Icon size={20} strokeWidth={1.75} aria-hidden="true" />{label}</Link>;
-          })}
+        <Link href="/" className="brand"><Logo /><span>LoadWallet<span className="brand-sub">Pay on delivery</span></span></Link>
+        <nav aria-label="Main navigation" className="mt-10">
+          <Link href="/" className={`nav-item ${onLoads ? "nav-active" : ""}`} aria-current={onLoads ? "page" : undefined}>
+            <Truck size={20} strokeWidth={1.75} aria-hidden="true" />Loads
+          </Link>
         </nav>
         <div className="sidebar-bottom">
-          <Link href="/guide" className={`nav-item ${pathname === "/guide" ? "nav-active" : ""}`} aria-current={pathname === "/guide" ? "page" : undefined}><CircleHelp size={18} aria-hidden="true" />How it works<ChevronRight size={16} aria-hidden="true" /></Link>
-          <div className="connection-note"><ShieldCheck size={20} strokeWidth={1.75} aria-hidden="true" /><div>Protected by policy<small>Powered by NEAR Intents</small></div><ArrowUpRight size={14} aria-hidden="true" /></div>
+          <a href="/api/v1/openapi.json" target="_blank" rel="noreferrer" className="nav-item"><FileCode2 size={18} aria-hidden="true" />API (OpenAPI)<ChevronRight size={16} aria-hidden="true" className="ml-auto" /></a>
+          <div className="connection-note"><ShieldCheck size={20} strokeWidth={1.75} aria-hidden="true" /><div>Every payout is checked by its wallet&apos;s policy<small>NEAR Intents · Agent Connect</small></div></div>
         </div>
       </aside>
       <header className="app-header">
         <div className="mobile-brand"><Link href="/" aria-label="LoadWallet home"><Logo /></Link></div>
-        <div className="breadcrumb"><span>Workspace</span><ChevronRight size={14} aria-hidden="true" /><span>{current}</span></div>
-        <div className="header-actions"><ModeBadge /><Button variant="ghost" onClick={toggleTheme} aria-label={dark ? "Switch to light theme" : "Switch to dark theme"}>{dark ? <Sun size={18} aria-hidden="true" /> : <Moon size={18} aria-hidden="true" />}</Button>{children}<span className="header-avatar" title="Broker workspace">B</span></div>
+        <div className="breadcrumb"><span>Loads</span><ChevronRight size={14} aria-hidden="true" /><span>{title}</span></div>
+        <div className="header-actions">
+          <ConnectionBadge />
+          {actions}
+          <Button variant="ghost" onClick={toggleTheme} aria-label={dark ? "Switch to light theme" : "Switch to dark theme"}>{dark ? <Sun size={18} aria-hidden="true" /> : <Moon size={18} aria-hidden="true" />}</Button>
+          <Button variant="ghost" onClick={signOut} aria-label="Sign out"><LogOut size={18} aria-hidden="true" /></Button>
+        </div>
       </header>
-      <nav className="mobile-nav" aria-label="Mobile navigation">{nav.map(({ href, label, icon: Icon }) => <Link key={href} href={href} aria-current={section === href ? "page" : undefined}><Icon size={18} aria-hidden="true" /><span>{label}</span></Link>)}</nav>
+      <main id="main-content" className="dashboard-page">{children}</main>
     </>
   );
 }
@@ -136,24 +137,52 @@ export function Logo() {
   );
 }
 
-export function Stat({ label, value, hint, tone }: { label: string; value: React.ReactNode; hint?: React.ReactNode; tone?: "money" | "danger" }) {
-  const color = tone === "money" ? "text-money" : tone === "danger" ? "text-danger" : "";
+export function CopyButton({ value, label = "Copy" }: { value: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
   return (
-    <div className="card p-4">
-      <div className="text-sm text-muted">{label}</div>
-      <div className={`num mt-1.5 text-2xl font-medium tracking-tight ${color}`}>{value}</div>
-      {hint && <div className="mt-1 text-xs text-muted">{hint}</div>}
-    </div>
+    <button
+      type="button"
+      className="btn"
+      onClick={async () => {
+        await navigator.clipboard.writeText(value);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+    >
+      {copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
+      {copied ? "Copied" : label}
+    </button>
   );
 }
 
-/** OpenStreetMap embed centred on a point, with a marker. No API key, no JS bundle. */
-export function MapEmbed({ lat, lng, height = 180, zoom = 0.012 }: { lat: number; lng: number; height?: number; zoom?: number }) {
+/** A monospace id that copies on click. */
+export function CopyId({ value, head = 8, tail = 6 }: { value: string | null | undefined; head?: number; tail?: number }) {
+  const [copied, setCopied] = useState(false);
+  if (!value) return <span className="text-muted">—</span>;
+  const shortValue = value.length <= head + tail + 1 ? value : `${value.slice(0, head)}…${value.slice(-tail)}`;
+  return (
+    <button
+      type="button"
+      title={copied ? "Copied" : `Copy ${value}`}
+      className="copy-id"
+      onClick={async () => {
+        await navigator.clipboard.writeText(value);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1200);
+      }}
+    >
+      {copied ? "copied" : shortValue}
+    </button>
+  );
+}
+
+/** OpenStreetMap embed centred on a point, with a marker. */
+export function MapEmbed({ lat, lng, height = 180, zoom = 0.01 }: { lat: number; lng: number; height?: number; zoom?: number }) {
   const bbox = [lng - zoom, lat - zoom * 0.6, lng + zoom, lat + zoom * 0.6].join(",");
   return (
     <div>
       <iframe
-        title="map"
+        title="Map"
         className="w-full rounded-lg border border-line bg-panel-2"
         style={{ height }}
         loading="lazy"
@@ -166,7 +195,7 @@ export function MapEmbed({ lat, lng, height = 180, zoom = 0.012 }: { lat: number
   );
 }
 
-export function ErrorNote({ message }: { message: string | null }) {
+export function ErrorNote({ message }: { message: string | null | undefined }) {
   if (!message) return null;
   return <div role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">{message}</div>;
 }
