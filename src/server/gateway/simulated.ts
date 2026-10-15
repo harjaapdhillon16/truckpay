@@ -1,7 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import type { GenerateIntentResponse, Policy } from "@near-intents-agent-api/sdk";
-import { toPolicyDestination } from "../policy";
+import { evaluatePolicy, toPolicyDestination } from "../policy";
 import { GatewayError, type OperationStatus, type WalletGateway } from "./types";
 
 /**
@@ -164,6 +164,12 @@ export function simulatedGateway(): WalletGateway {
       s.nextSendStatus = null;
       s.ops.set(correlationId, { status, agentId, failureCode: null, details: {}, polls: 0 });
       return { correlationId, status, failureCode: null, agentId, details: {} };
+    },
+
+    async quotePayout({ agentId, asset, amountAtomic, destination }) {
+      const agent = s.agents.get(agentId);
+      if (!agent) throw new GatewayError("not_found", "Unknown agent.", false);
+      return evaluatePolicy(agent.policy, { asset, amountAtomic, destination });
     },
 
     async health() {

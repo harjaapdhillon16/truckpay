@@ -20,7 +20,9 @@ export default function NewLoadPage() {
   const [stop, setStop] = useState<StopChoice>({ kind: "preset", index: 1 });
   const [stopName, setStopName] = useState(STOP_PRESETS[1].name);
   const [carrierName, setCarrierName] = useState("Swift Lane Trucking");
-  const [payoutKind, setPayoutKind] = useState<Destination["kind"]>("transfer");
+  const [payoutKindChoice, setPayoutKind] = useState<Destination["kind"]>("transfer");
+  const testMoney = Boolean(health?.testMoney && health.mode === "live");
+  const payoutKind: Destination["kind"] = testMoney ? "withdraw" : payoutKindChoice;
   // null until edited: demo deployments prefill the company-controlled demo carrier account.
   const [payoutInput, setPayout] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
@@ -126,10 +128,14 @@ export default function NewLoadPage() {
 
           <fieldset>
             <legend className="label">Carrier payout account</legend>
-            <div className="segmented" role="radiogroup" aria-label="Payout type">
-              <button type="button" role="radio" aria-checked={payoutKind === "transfer"} onClick={() => { setPayoutKind("transfer"); setPayout(null); }}>NEAR Intents account</button>
-              <button type="button" role="radio" aria-checked={payoutKind === "withdraw"} onClick={() => { setPayoutKind("withdraw"); setPayout(null); }}>USDC on Base</button>
-            </div>
+            {testMoney ? (
+              <p className="field-hint mt-0">Test money: payouts go to a Base address, so Agent Connect can check each payment against the policy without moving funds.</p>
+            ) : (
+              <div className="segmented" role="radiogroup" aria-label="Payout type">
+                <button type="button" role="radio" aria-checked={payoutKind === "transfer"} onClick={() => { setPayoutKind("transfer"); setPayout(null); }}>NEAR Intents account</button>
+                <button type="button" role="radio" aria-checked={payoutKind === "withdraw"} onClick={() => { setPayoutKind("withdraw"); setPayout(null); }}>USDC on Base</button>
+              </div>
+            )}
             <input
               className="field mt-2 font-mono"
               value={payout}
@@ -151,7 +157,7 @@ export default function NewLoadPage() {
           </div>
           <ol className="next-steps">
             <li><span><strong>Wallet created.</strong> The company key signs its policy and the load agent&apos;s grant.</span></li>
-            <li><span><strong>You fund it.</strong> Scan the deposit QR and send the amount above.</span></li>
+            <li><span><strong>You fund it.</strong> {testMoney ? "Add test funds: no real USDC moves." : "Scan the deposit QR and send the amount above."}</span></li>
             <li><span><strong>Driver submits proof.</strong> One photo of the signed BOL at the dock.</span></li>
             <li><span><strong>Carrier is paid.</strong> Within seconds of the proof being verified.</span></li>
           </ol>

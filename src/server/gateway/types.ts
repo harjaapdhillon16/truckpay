@@ -1,5 +1,6 @@
 import type { GenerateIntentRequest, GenerateIntentResponse, Policy, SignedData } from "@near-intents-agent-api/sdk";
 import type { Destination } from "@/lib/domain";
+import type { PolicyCheck } from "../policy";
 
 /**
  * The only door to Agent Connect. Every method is a single non-blocking call: callers that need
@@ -27,6 +28,12 @@ export interface WalletGateway {
     destination: Destination;
     idempotencyKey: string;
   }): Promise<OperationStatus>;
+
+  /**
+   * Asks the wallet whether a payment would be allowed, without moving funds. Agent Connect can
+   * only quote withdrawals (`dry: true`); returns null when it can't quote this destination.
+   */
+  quotePayout(input: { agentId: string; asset: string; amountAtomic: string; destination: Destination }): Promise<PolicyCheck | null>;
 
   health(): Promise<{ ok: boolean; network: string | null; components: { id: string; status: string }[] }>;
 }

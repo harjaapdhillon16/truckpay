@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { Bucket } from "@/server/runtime";
@@ -41,7 +41,8 @@ export const CARRIER = { name: "Swift Lane Trucking", payout: { kind: "transfer"
 
 export function setup(env: Record<string, string> = {}) {
   const sqlite = new DatabaseSync(":memory:");
-  sqlite.exec(readFileSync(path.resolve(__dirname, "../../migrations/0001_init.sql"), "utf8"));
+  const migrations = path.resolve(__dirname, "../../migrations");
+  for (const file of readdirSync(migrations).filter((f) => f.endsWith(".sql")).sort()) sqlite.exec(readFileSync(path.join(migrations, file), "utf8"));
   const pending: Promise<unknown>[] = [];
   simulator.reset();
   setRuntimeForTests({

@@ -48,7 +48,7 @@ export function LoadStatusPill({ status }: { status: LoadStatus }) {
   );
 }
 
-export type Health = { ok: boolean; mode: "live" | "simulated"; network: string | null; scale: number; aiReview: string | null; demoCarrier: { near: string | null; base: string | null } | null; geofenceMeters: number; owner: string };
+export type Health = { ok: boolean; mode: "live" | "simulated"; network: string | null; scale: number; aiReview: string | null; demoCarrier: { near: string | null; base: string | null } | null; geofenceMeters: number; owner: string; testMoney: boolean };
 
 export function useHealth() {
   return usePolling<Health>("/health", 60_000).data;
@@ -58,6 +58,7 @@ function ConnectionBadge() {
   const health = useHealth();
   if (!health) return <Pill>Connecting…</Pill>;
   if (health.mode === "simulated") return <Pill tone="warn" dot>Simulated wallet</Pill>;
+  if (health.testMoney) return <Pill tone={health.ok ? "money" : "warn"} dot>Agent Connect · test money</Pill>;
   return (
     <Pill tone={health.ok ? "money" : "warn"} dot>
       {health.ok ? `Agent Connect · ${health.network}` : "Agent Connect degraded"}
@@ -67,6 +68,12 @@ function ConnectionBadge() {
 
 export function ScaleBadge() {
   const health = useHealth();
+  if (health?.testMoney && health.mode === "live")
+    return (
+      <span className="scale-badge" title="Wallets, policies, grants and refusals are real on Agent Connect. Deposits are simulated and payouts are approved by Agent Connect without moving funds.">
+        Test money · real Agent Connect wallets, no real USDC moves
+      </span>
+    );
   if (!health || health.scale === 1) return null;
   const ratio = Math.round(1 / health.scale).toLocaleString();
   return (

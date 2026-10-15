@@ -65,6 +65,7 @@ export async function insertLoad(input: {
   carrier: Carrier;
   driverToken: string;
   createKey: string | null;
+  testMoney: boolean;
 }) {
   const ts = now();
   await (await db())
@@ -80,7 +81,7 @@ export async function insertLoad(input: {
       input.rateAtomic,
       json(input.delivery),
       json(input.carrier),
-      json({ phase: "create" } satisfies WalletState),
+      json({ phase: "create", testMoney: input.testMoney } satisfies WalletState),
       input.driverToken,
       input.createKey,
       ts,
@@ -201,6 +202,8 @@ type PaymentRow = {
   proof_id: string | null;
   created_at: string;
   settled_at: string | null;
+  test: number;
+  policy_check: string | null;
 };
 
 const toPayment = (r: PaymentRow): Payment => ({
@@ -218,6 +221,8 @@ const toPayment = (r: PaymentRow): Payment => ({
   proofId: r.proof_id,
   createdAt: r.created_at,
   settledAt: r.settled_at,
+  test: r.test === 1,
+  policyCheck: r.policy_check ? JSON.parse(r.policy_check) : null,
 });
 
 /**
@@ -269,13 +274,13 @@ export async function listPayments(loadId: string) {
 
 export async function updatePayment(
   id: string,
-  patch: Partial<Pick<Payment, "status" | "correlationId" | "errorCode" | "errorDetail" | "settledAt">>,
+  patch: Partial<Pick<Payment, "status" | "correlationId" | "errorCode" | "errorDetail" | "settledAt" | "test" | "policyCheck">>,
 ) {
   const current = (await getPayment(id))!;
   const next = { ...current, ...patch };
   await (await db())
-    .prepare("UPDATE payments SET status = ?, correlation_id = ?, error_code = ?, error_detail = ?, settled_at = ? WHERE id = ?")
-    .bind(next.status, next.correlationId, next.errorCode, next.errorDetail, next.settledAt, id)
+    .prepare("UPDATE payments SET status = ?, correlation_id = ?, error_code = ?, error_detail = ?, settled_at = ?, test = ?, policy_check = ? WHERE id = ?")
+    .bind(next.status, next.correlationId, next.errorCode, next.errorDetail, next.settledAt, next.test ? 1 : 0, next.policyCheck ? json(next.policyCheck) : null, id)
     .run();
   return (await getPayment(id))!;
 }

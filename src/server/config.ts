@@ -21,6 +21,8 @@ export async function appConfig() {
     verifierModel: (await setting("VERIFIER_MODEL")) ?? "claude-opus-5-5",
     aiEnabled: Boolean(await setting("ANTHROPIC_API_KEY")),
     demoFeatures: (await setting("DEMO_FEATURES")) === "true",
+    /** Real Agent Connect wallets, but no real USDC: deposits are simulated, payouts are quoted. */
+    testMoney: (await setting("TEST_MONEY")) === "true",
     refundAccount: (await setting("COMPANY_REFUND_NEAR_ACCOUNT")) ?? null,
     demoCarrierBaseAddress: (await setting("DEMO_CARRIER_BASE_ADDRESS")) ?? null,
     demoCarrierNearAccount: (await setting("DEMO_CARRIER_NEAR_ACCOUNT")) ?? null,

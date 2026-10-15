@@ -13,7 +13,7 @@
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "db:migrate:local": "wrangler d1 migrations apply loadwallet-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply loadwallet-db --remote",
-    "demo:keys": "node scripts/generate-demo-keys.mjs .env.local"
+    "demo:keys": "node scripts/generate-demo-keys.mjs .dev.vars"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",

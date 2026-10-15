@@ -170,3 +170,43 @@ describe("access", () => {
     expect(ok.status).toBe(200);
   });
 });
+
+describe("test money", () => {
+  beforeEach(() => {
+    h = setup({ TEST_MONEY: "true" });
+  });
+
+  it("pays from the test ledger after the wallet policy approves, without touching real balances", async () => {
+    const { id, token } = await fundedLoad();
+    const funded = await getLoad(id);
+    expect(funded.testMoney).toBe(true);
+    expect(funded.wallet.deposit).toBeNull();
+
+    const submitted = await call(proof.POST as never, { params: { token }, form: proofForm(AT_DOCK) });
+    expect(submitted.body.state).toBe("paid");
+    expect(submitted.body.payment.test).toBe(true);
+
+    const after = await getLoad(id);
+    expect(after.payment.test).toBe(true);
+    expect(after.payment.correlationId).toBeNull();
+    expect(after.payment.policyCheck.allowed).toBe(true);
+    expect(after.wallet.balanceAtomic).toBe("0");
+  });
+
+  it("still sends the fraud test to the wallet, which refuses it", async () => {
+    const { id } = await fundedLoad();
+    const res = await call(fraud.POST as never, { params: { id } });
+    expect(res.body.attempt.status).toBe("BLOCKED");
+    expect(res.body.attempt.errorCode).toBe("policy_destination_denied");
+    expect((await getLoad(id)).wallet.balanceAtomic).toBe("2500000");
+  });
+
+  it("refunds test funds to the company on cancel", async () => {
+    const { id } = await fundedLoad();
+    const cancelled = await call(cancel.POST as never, { params: { id } });
+    expect(cancelled.body.status).toBe("cancelled");
+    const refund = cancelled.body.payments.find((p: { kind: string }) => p.kind === "refund");
+    expect(refund.test).toBe(true);
+    expect(refund.destination.account).toBe("acme-refunds.near");
+  });
+});

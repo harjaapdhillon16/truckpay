@@ -134,11 +134,24 @@ function Stage({ load, busy, act, fmtUsdc }: { load: View; busy: string | null; 
         <div className="paid-panel">
           <div className="paid-check"><Check size={28} aria-hidden="true" /></div>
           <div>
-            <h2 className="stage-title">Carrier paid {usd(load.payment?.amountUsd ?? load.rateUsd)}</h2>
+            <h2 className="stage-title">Carrier paid {usd(load.payment?.amountUsd ?? load.rateUsd)}{load.payment?.test && <Pill tone="warn">test money</Pill>}</h2>
             <p className="stage-lead">
               {fmtUsdc(load.payment?.amountAtomic ?? load.onChain.amountAtomic)} USDC to {load.carrier.payoutHint}
               {load.proofToPayoutSeconds !== null && <> · <strong className="text-ink">{formatSeconds(load.proofToPayoutSeconds)}</strong> from proof to payout</>}
             </p>
+            {load.payment?.test && load.payment.policyCheck ? (
+              <div className="policy-check">
+                <div className="text-sm font-medium">
+                  {load.payment.policyCheck.source === "agent_connect_quote" ? "Agent Connect approved this exact payment" : "Allowed by the wallet's signed policy"}
+                </div>
+                <ul>
+                  {load.payment.policyCheck.checks.map((c) => (
+                    <li key={c.name} className={c.passed ? "text-money" : "text-danger"}>{c.passed ? "✓" : "✕"} <span className="text-ink">{c.name}</span></li>
+                  ))}
+                </ul>
+                <p className="text-xs text-muted">Test money: the wallet&apos;s real policy checked the payment and no USDC moved.</p>
+              </div>
+            ) : (
             <dl className="kv mt-4">
               <dt>Agent Connect operation</dt><dd><CopyId value={load.payment?.correlationId} /></dd>
               <dt>Settled</dt><dd>{load.payment?.settledAt ? clock(load.payment.settledAt) : "—"}</dd>
@@ -146,6 +159,7 @@ function Stage({ load, busy, act, fmtUsdc }: { load: View; busy: string | null; 
                 <><dt>Carrier address</dt><dd><a className="text-accent hover:underline" href={`https://basescan.org/address/${load.carrier.payout.address}#tokentxns`} target="_blank" rel="noreferrer">View on Basescan <ExternalLink size={12} className="inline" aria-hidden="true" /></a></dd></>
               )}
             </dl>
+            )}
           </div>
         </div>
       );
@@ -169,8 +183,8 @@ function IntentList({ load, pending }: { load: View; pending?: boolean }) {
           <span className="min-w-0 flex-1">
             <span className="font-medium">{labels[i.type] ?? i.type}</span>
             {i.summary && <small>{i.summary}</small>}
+            <span className="intent-id"><CopyId value={i.correlationId} head={10} tail={6} /></span>
           </span>
-          <CopyId value={i.correlationId} head={10} tail={4} />
         </li>
       ))}
       {pending && <li className="text-muted"><span className="pulse-dot" /><span>{phaseText[load.wallet.phase] ?? "Working…"}</span></li>}
@@ -185,6 +199,17 @@ function Funding({ load, busy, act, fmtUsdc }: { load: View; busy: string | null
     if (deposit?.address) QRCode.toDataURL(deposit.address, { margin: 1, width: 220 }).then(setQr);
   }, [deposit?.address]);
   const received = BigInt(load.wallet.balanceAtomic || "0");
+  if (load.testMoney)
+    return (
+      <>
+        <h2 className="stage-title">Fund the wallet with test money</h2>
+        <p className="stage-lead">
+          This wallet, its policy and the agent&apos;s grant are real on Agent Connect. In test-money mode no USDC moves: add {usd(load.rateUsd)} of test funds
+          ({fmtUsdc(load.onChain.amountAtomic)} USDC at demo scale), and when the carrier is paid, Agent Connect checks the payment against the policy instead of sending it.
+        </p>
+        <button className="btn btn-primary mt-4" disabled={busy === "deposit"} onClick={() => act("deposit", "/simulate-deposit")}>Add test funds</button>
+      </>
+    );
   return (
     <>
       <h2 className="stage-title">Fund the wallet</h2>

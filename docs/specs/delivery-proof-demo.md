@@ -298,7 +298,7 @@ The UI uses only these endpoints. The previous single "actions" switch endpoint 
 
 ### Company console access
 
-- Resolved: the company screens and company API require a shared **company passcode** (a session cookie from the sign-in screen, or `Authorization: Bearer <passcode>` for API clients). The driver link and driver API stay public, scoped by their token. Cloudflare Access (email allow-list) can be layered on top later without code changes.
+- Resolved, then relaxed on 2026-10-15: the demo deployment runs **open** (no passcode). Setting `COMPANY_PASSCODE` turns on a shared **company passcode** (a session cookie from the sign-in screen, or `Authorization: Bearer <passcode>` for API clients). The driver link and driver API stay public, scoped by their token. Cloudflare Access (email allow-list) can be layered on top later without code changes.
 
 ### Follow-ups (not in this demo)
 
@@ -325,3 +325,13 @@ What changed from the decisions above while building, and why:
 - **Workers fetch adapter.** The Agent SDK requests `credentials: "omit"` and `redirect: "error"`, which Workers' fetch doesn't implement. The live gateway passes the SDK a fetch that drops the first and refuses redirects itself.
 - **Tests run in Node, not the Workers runtime.** They use node:sqlite behind the same D1 interface, an in-memory bucket, the simulated gateway and a fixture verifier, all through the HTTP API v1 handlers. The live smoke check was run by hand against mainnet: wallet setup, grant, deposit address and the policy refusal, with no funds moved.
 - **AI review effort is `low`.** The driver waits on it; one live review of a synthetic BOL took about 11 s. When the evidence is weak, the model routes to the company rather than paying.
+
+## Test money (2026-10-15)
+
+Agent Connect has no testnet: the API reports `network: mainnet` and grants are bound to mainnet. Real funds only move on a deposit or a payout. So the demo runs in **test-money mode** (`TEST_MONEY=true`):
+
+- **Real on Agent Connect:** wallet creation, the company-signed policy, the load agent's grant, and the fraud test (a real transfer that the wallet refuses with `policy_destination_denied`).
+- **Test money:** no deposit address is issued. **Add test funds** credits a per-load ledger.
+- **Payout:** the agent asks Agent Connect for a no-money withdrawal quote (`dry: true`). Agent Connect's own `policy_check` (`within_limits`, `address_allowed`) decides it. An allowed payment is recorded as **Paid (test money)** with that check; a refused one is **Blocked by policy**. Because only withdrawals can be quoted, carrier payouts must be a Base address in this mode. Refunds go to the company's NEAR account and are checked against the signed policy instead.
+- Verified live: wallet, grant, quote approval and fraud refusal on mainnet, with no funds moved.
+- To move real funds later, set `TEST_MONEY=false` and redeploy. Loads remember the mode they were created in.

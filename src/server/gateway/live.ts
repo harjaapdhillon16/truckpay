@@ -90,6 +90,34 @@ export function liveGateway(apiKey: string, baseUrl: string): WalletGateway {
         return toStatus(result as unknown as StatusResponse);
       }),
 
+    quotePayout: async ({ agentId, asset, amountAtomic, destination }) => {
+      if (destination.kind !== "withdraw") return null;
+      try {
+        const result = await api.withdraw(agentId, { asset, amount: amountAtomic, chain: destination.chain, recipient: destination.address, dry: true });
+        const quote = (result as unknown as { quote?: { policy_check?: { within_limits?: boolean; address_allowed?: boolean }; reason?: string } }).quote ?? {};
+        const check = quote.policy_check;
+        if (!check) return null;
+        const withinLimits = check.within_limits !== false;
+        const addressAllowed = check.address_allowed !== false;
+        const allowed = withinLimits && addressAllowed;
+        return {
+          allowed,
+          code: allowed ? null : addressAllowed ? "policy_denied" : "policy_destination_denied",
+          detail: allowed ? "Agent Connect confirmed the payment is within the wallet policy." : "Agent Connect said the wallet policy refuses this payment.",
+          checks: [
+            { name: "Within limits", passed: withinLimits },
+            { name: "Carrier address allowed", passed: addressAllowed },
+          ],
+          source: "agent_connect_quote",
+        };
+      } catch (error) {
+        if (error instanceof AgentApiError && (error.code.startsWith("policy_") || error.code === "spend_budget_exceeded"))
+          return { allowed: false, code: error.code, detail: error.errors[0]?.detail ?? error.code, checks: [], source: "agent_connect_quote" };
+        // Quote unavailable (provider down, unsupported route): let the caller fall back.
+        return null;
+      }
+    },
+
     health: async () => {
       try {
         const network = await api.getNetwork();

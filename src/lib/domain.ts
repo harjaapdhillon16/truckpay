@@ -30,6 +30,9 @@ export type WalletPhase = "create" | "await_policy" | "grant" | "deposit" | "rea
 /** What the company signed and what the load agent holds, as stored on the load. */
 export type WalletState = {
   phase: WalletPhase;
+  /** Test money: real Agent Connect wallet, but deposits are simulated and payouts are only quoted. */
+  testMoney?: boolean;
+  testBalanceAtomic?: string;
   agentId?: string;
   ownerAddress?: string;
   nearAccountId?: string;
@@ -84,6 +87,18 @@ export type Payment = {
   proofId: string | null;
   createdAt: string;
   settledAt: string | null;
+  /** Test money: approved by the wallet's policy without moving funds. */
+  test: boolean;
+  policyCheck: PolicyCheck | null;
+};
+
+export type PolicyCheck = {
+  allowed: boolean;
+  code: string | null;
+  detail: string;
+  checks: { name: string; passed: boolean }[];
+  /** Who checked: Agent Connect's own no-money quote, or the signed policy evaluated locally. */
+  source: "agent_connect_quote" | "signed_policy";
 };
 
 export type Check = { name: string; passed: boolean; note: string };

@@ -43,6 +43,7 @@ export async function companyLoadView(load: Load, origin: string) {
     status: load.status,
     statusLabel: STATUS_LABELS[load.status],
     mode: load.mode,
+    testMoney: Boolean(load.wallet.testMoney),
     failure: load.failure,
     rateUsd: load.rateUsd,
     onChain: { amountAtomic: load.rateAtomic, symbol: config.assetSymbol, decimals: config.assetDecimals, scale: config.scale, asset: config.payoutAsset },
@@ -99,6 +100,7 @@ export async function companyLoadSummary(load: Load) {
     deliveryAddress: load.delivery.address,
     carrierName: load.carrier.name,
     mode: load.mode,
+    testMoney: Boolean(load.wallet.testMoney),
     updatedAt: load.updatedAt,
   };
 }
@@ -135,7 +137,7 @@ export async function driverView(load: Load) {
     latestProof: latest ? { status: latest.status, distanceM: Math.round(latest.distanceM), createdAt: latest.createdAt } : null,
     payment:
       payment && payment.status === "SUCCESS"
-        ? { amountUsd: payment.amountUsd, destinationHint: destinationHint(payment.destination), settledAt: payment.settledAt }
+        ? { amountUsd: payment.amountUsd, destinationHint: destinationHint(payment.destination), settledAt: payment.settledAt, test: payment.test }
         : null,
   };
 }

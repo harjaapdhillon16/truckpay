@@ -16,6 +16,7 @@ export const GET = publicRoute(async () => {
     aiReview: config.aiEnabled ? config.verifierModel : null,
     owner: (await companyOwner()).owner.address,
     demoFeatures: config.demoFeatures,
+    testMoney: config.testMoney,
     demoCarrier: config.demoFeatures ? { near: config.demoCarrierNearAccount, base: config.demoCarrierBaseAddress } : null,
     geofenceMeters: config.geofenceMeters,
   });

@@ -63,6 +63,7 @@ function Body({ data, token, onUpdate }: { data: DriverView; token: string; onUp
           <span className="driver-paid-check"><Check size={36} aria-hidden="true" /></span>
           <h1>Paid {usd(data.payment?.amountUsd ?? data.amountUsd)}</h1>
           <p>to {data.carrierName} · {data.payment?.destinationHint}</p>
+          {data.payment?.test && <p className="driver-muted">Test money: approved by the wallet, no real funds moved.</p>}
           {data.payment?.settledAt && <p className="driver-muted">{new Date(data.payment.settledAt).toLocaleString()}</p>}
         </section>
       );

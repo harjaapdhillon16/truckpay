@@ -24,6 +24,8 @@
     "SETTLEMENT_SCALE": "0.001",
     "VERIFIER_MODEL": "claude-opus-5-5",
     "DEMO_FEATURES": "true",
+    // Real Agent Connect wallets, no real USDC: deposits simulated, payouts quoted. Set "false" to move real funds.
+    "TEST_MONEY": "true",
     "COMPANY_REFUND_NEAR_ACCOUNT": "f07fdf51c02bb817f47b5694d6532bb43071fc423b34326694db21a3c2f67bbc",
     "DEMO_CARRIER_BASE_ADDRESS": "0x9817cdf87e886c3082852e042627a9904124485d",
     "DEMO_CARRIER_NEAR_ACCOUNT": "024774bd108d607b9a66c5b96f5f6366565d6ddd67519d0305f82fb8c1194494"

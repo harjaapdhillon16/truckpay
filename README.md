@@ -4,7 +4,15 @@ A company escrows one truckload's payment in its own **Agent Connect** wallet (N
 
 Spec: [docs/specs/delivery-proof-demo.md](docs/specs/delivery-proof-demo.md) · API: `/api/v1/openapi.json`
 
-Live: https://loadwallet.zerostack.workers.dev (company passcode required; driver links are public)
+Live: https://loadwallet.zerostack.workers.dev (open, no passcode; set `COMPANY_PASSCODE` to require one)
+
+## Test money (default)
+
+Agent Connect has no testnet, so the demo runs with `TEST_MONEY=true`:
+- **Real on Agent Connect:** the wallets, policies, grants and the fraud-test refusal.
+- **No USDC moves:** **Add test funds** replaces the deposit, and each payout is approved by Agent Connect's own no-money quote.
+
+Set `TEST_MONEY=false` in `wrangler.jsonc` to move real funds.
 
 ## The flow
 
@@ -32,7 +40,9 @@ npm run db:migrate:local
 npm run dev
 ```
 
-`npm run demo:keys` writes the company owner key, the refund and demo carrier accounts, the grant sealing key and a company passcode into `.env.local`. It never overwrites existing values. Add `NEAR_INTENTS_AGENT_API_KEY` (an `naa_…` key from the Agent API partner dashboard) and `ANTHROPIC_API_KEY`.
+`npm run demo:keys` writes the company owner key, the refund and demo carrier accounts and the grant sealing key into `.dev.vars`. It never overwrites existing values. Add `NEAR_INTENTS_AGENT_API_KEY` (an `naa_…` key from the Agent API partner dashboard) and `ANTHROPIC_API_KEY`.
+
+Keep secrets in `.dev.vars`, never `.env.local`: `next build` bundles `.env*` files into the Worker.
 
 Without an Agent Connect key the wallet is simulated: same policy checks, same error codes, and a **Simulate deposit** button. To force simulation with a key set, use `AGENT_CONNECT_MODE=simulated`.
 
@@ -54,7 +64,7 @@ npm run db:migrate:remote
 npm run deploy
 ```
 
-- **Secrets** (set with `wrangler secret put` or `wrangler secret bulk`): `NEAR_INTENTS_AGENT_API_KEY`, `ANTHROPIC_API_KEY`, `COMPANY_OWNER_EVM_PRIVATE_KEY`, `GRANT_SEALING_KEY`, `COMPANY_PASSCODE` and `TICK_SECRET`.
+- **Secrets** (set with `wrangler secret put` or `wrangler secret bulk`): `NEAR_INTENTS_AGENT_API_KEY`, `ANTHROPIC_API_KEY`, `COMPANY_OWNER_EVM_PRIVATE_KEY`, `GRANT_SEALING_KEY` and `TICK_SECRET`, plus `COMPANY_PASSCODE` only if you want the company screens behind a passcode.
 - **Vars** live in `wrangler.jsonc`: API URL, payout asset, demo scale, refund and demo carrier accounts.
 - **Cron:** a one-minute trigger advances wallet setups, deposits and payments nobody is watching.
 

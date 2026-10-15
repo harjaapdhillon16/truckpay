@@ -1,5 +1,5 @@
 // Generates the demo company keys into an env file, once. Existing values are never overwritten.
-// Usage: node scripts/generate-demo-keys.mjs .env.local
+// Usage: node scripts/generate-demo-keys.mjs .dev.vars  (never .env.local: next build bundles .env files into the Worker)
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -29,7 +29,6 @@ set("DEMO_CARRIER_BASE_ADDRESS", carrier.a);
 }
 set("DEMO_CARRIER_BASE_PRIVATE_KEY", carrier.k);
 set("GRANT_SEALING_KEY", randomBytes(32).toString("base64"));
-set("COMPANY_PASSCODE", randomBytes(9).toString("base64url"));
 writeFileSync(envPath, env.endsWith("\n") ? env : env + "\n");
 const pick = (k) => (env.match(new RegExp(`^${k}=(.*)$`, "m")) || [])[1];
 console.log("owner address      ", privateKeyToAccount(pick("BROKER_OWNER_EVM_PRIVATE_KEY")).address.toLowerCase());

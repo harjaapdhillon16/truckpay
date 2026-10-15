@@ -8,7 +8,7 @@ import { companyOwner, signAsCompany } from "./company";
 import { getProofFile, putProofFile } from "./files";
 import { GatewayError, TERMINAL_OPERATION, gateway } from "./gateway";
 import { simulator } from "./gateway/simulated";
-import { buildLoadPolicy } from "./policy";
+import { buildLoadPolicy, evaluatePolicy } from "./policy";
 import { seal, unseal } from "./seal";
 import * as store from "./store";
 import { type Image, verifyDelivery } from "./verifier";
@@ -51,6 +51,8 @@ export async function createLoad(input: { number?: string; rateUsd: number; deli
   const id = crypto.randomUUID();
   const rateAtomic = usdToAtomic(input.rateUsd, config.scale, config.assetDecimals);
   if (rateAtomic <= 0n) throw new AgentRefusal("rate_too_small", "The rate is too small to settle on-chain at this demo scale.", 400);
+  if (config.testMoney && config.mode === "live" && input.carrier.payout.kind !== "withdraw")
+    throw new AgentRefusal("test_money_needs_base", "In test-money mode the carrier payout must be a Base address: Agent Connect can check those payments without moving funds.", 400);
   await store.insertLoad({
     id,
     number: input.number?.trim() || `LD-${Math.floor(10000 + Math.random() * 89999)}`,
@@ -61,6 +63,7 @@ export async function createLoad(input: { number?: string; rateUsd: number; deli
     carrier: input.carrier,
     driverToken: base64url(crypto.getRandomValues(new Uint8Array(16))),
     createKey,
+    testMoney: config.testMoney,
   });
   await store.addEvent(id, "company", "booked", `Load booked for $${input.rateUsd.toLocaleString()} to ${input.delivery.name}`);
   return (await store.getLoad(id))!;
@@ -215,6 +218,17 @@ async function walletStep(load: Load): Promise<boolean> {
     return true;
   }
 
+  if (w.phase === "deposit" && w.testMoney) {
+    // Test money: no deposit address, so nobody can send real USDC to this wallet by mistake.
+    const balance = await gw.balance(w.agentId!, config.payoutAsset);
+    await store.updateLoad(load.id, {
+      status: "awaiting_funding",
+      wallet: { ...w, phase: "ready", nearAccountId: balance.nearAccountId ?? undefined, testBalanceAtomic: "0", balanceAtomic: "0", balanceCheckedAt: new Date().toISOString() },
+    });
+    await store.addEvent(load.id, "wallet", "wallet_ready", "Wallet ready. Test money: fund it with a simulated deposit");
+    return true;
+  }
+
   if (w.phase === "deposit") {
     const deposit = await gw.deposit(w.agentId!, config.payoutAsset, load.rateAtomic, `deposit-exact-${load.id}`);
     const balance = await gw.balance(w.agentId!, config.payoutAsset);
@@ -252,9 +266,15 @@ async function failIfTerminal(load: Load, status: string, code: string | null, w
 
 // ── funding ────────────────────────────────────────────────────────────────────────────────
 
-async function fundingStep(load: Load): Promise<boolean> {
+/** The wallet's spendable balance: the test-money ledger, or Agent Connect's real balance. */
+async function walletBalance(load: Load): Promise<string> {
+  if (load.wallet.testMoney) return load.wallet.testBalanceAtomic ?? "0";
   const config = await appConfig();
-  const { atomic } = await (await gateway()).balance(load.wallet.agentId!, config.payoutAsset);
+  return (await (await gateway()).balance(load.wallet.agentId!, config.payoutAsset)).atomic;
+}
+
+async function fundingStep(load: Load): Promise<boolean> {
+  const atomic = await walletBalance(load);
   await store.patchWallet(load.id, { balanceAtomic: atomic, balanceCheckedAt: new Date().toISOString() });
   if (BigInt(atomic) < BigInt(load.rateAtomic)) return false;
   if (await store.transition(load.id, ["awaiting_funding"], "funded")) {
@@ -263,12 +283,17 @@ async function fundingStep(load: Load): Promise<boolean> {
   return true;
 }
 
-/** Simulated mode only: pretend the company sent the deposit. */
+/** Simulated wallets and test money only: pretend the company sent the deposit. */
 export async function simulateDeposit(loadId: string) {
-  const load = await requireLoad(loadId);
-  if (load.mode !== "simulated") throw new AgentRefusal("not_simulated", "Only simulated wallets can be funded by simulation.");
+  let load = await requireLoad(loadId);
+  if (load.mode !== "simulated" && !load.wallet.testMoney) throw new AgentRefusal("not_simulated", "This wallet takes real USDC; send it to the deposit address.");
   if (load.status !== "awaiting_funding") throw new AgentRefusal("invalid_state", "The wallet is not waiting for funds.");
-  simulator.credit(load.wallet.agentId!, BigInt(load.rateAtomic));
+  if (load.wallet.testMoney) {
+    const funded = (BigInt(load.wallet.testBalanceAtomic ?? "0") + BigInt(load.rateAtomic)).toString();
+    load = await store.patchWallet(load.id, { testBalanceAtomic: funded });
+  } else {
+    simulator.credit(load.wallet.agentId!, BigInt(load.rateAtomic));
+  }
   // The funding transition is atomic, so this doesn't need the step lease.
   await fundingStep(load);
   return requireLoad(loadId);
@@ -394,6 +419,7 @@ async function startPayment(load: Load, proofId: string, from: LoadStatus[]) {
 }
 
 async function dispatch(load: Load, payment: Payment): Promise<Payment> {
+  if (load.wallet.testMoney && payment.kind !== "fraud_test") return dispatchTestMoney(load, payment);
   const config = await appConfig();
   try {
     const result = await (await gateway()).send({
@@ -422,6 +448,34 @@ async function dispatch(load: Load, payment: Payment): Promise<Payment> {
     await store.addEvent(load.id, "wallet", blocked ? "payment_blocked" : "payment_failed", blocked ? "The wallet's policy refused the payment" : "The payment failed", { paymentId: payment.id, code, detail });
     return updated;
   }
+}
+
+/**
+ * Test money: the wallet is real, the funds are not. Ask Agent Connect whether this exact payment
+ * passes the wallet's policy (a no-money quote for Base withdrawals; the signed policy otherwise)
+ * and settle it against the test-money ledger.
+ */
+async function dispatchTestMoney(load: Load, payment: Payment): Promise<Payment> {
+  const config = await appConfig();
+  const gw = await gateway();
+  const request = { agentId: load.wallet.agentId!, asset: config.payoutAsset, amountAtomic: payment.amountAtomic, destination: payment.destination };
+  let check = await gw.quotePayout(request);
+  if (!check) {
+    const { policy } = await gw.policy(load.wallet.agentId!);
+    if (!policy) return store.updatePayment(payment.id, { status: "SUBMITTING", errorCode: "policy_not_ready", errorDetail: "Waiting for the wallet policy." });
+    check = evaluatePolicy(policy, request);
+  }
+  const balance = BigInt(load.wallet.testBalanceAtomic ?? "0");
+  if (check.allowed && balance < BigInt(payment.amountAtomic))
+    check = { ...check, allowed: false, code: "insufficient_balance", detail: "The test-money balance is too low for this payment." };
+  if (!check.allowed) {
+    const updated = await store.updatePayment(payment.id, { status: "BLOCKED", test: true, policyCheck: check, errorCode: check.code, errorDetail: check.detail });
+    await store.addEvent(load.id, "wallet", "payment_blocked", "The wallet's policy refused the payment", { paymentId: payment.id, code: check.code });
+    return updated;
+  }
+  const left = (balance - BigInt(payment.amountAtomic)).toString();
+  await store.patchWallet(load.id, { testBalanceAtomic: left, balanceAtomic: left, balanceCheckedAt: new Date().toISOString() });
+  return store.updatePayment(payment.id, { status: "SUCCESS", test: true, policyCheck: check, errorCode: null, errorDetail: null, settledAt: new Date().toISOString() });
 }
 
 /** Follows the load's payment (or refund) to its end. Never re-sends under a new key. */
@@ -469,9 +523,7 @@ async function followPayment(load: Load, kind: "payment" | "refund"): Promise<bo
 
 async function refreshBalance(loadId: string) {
   try {
-    const load = await requireLoad(loadId);
-    const config = await appConfig();
-    const { atomic } = await (await gateway()).balance(load.wallet.agentId!, config.payoutAsset);
+    const atomic = await walletBalance(await requireLoad(loadId));
     await store.patchWallet(loadId, { balanceAtomic: atomic, balanceCheckedAt: new Date().toISOString() });
   } catch {
     // Display only.
@@ -490,7 +542,7 @@ export async function cancelLoad(loadId: string) {
   if (!["awaiting_funding", "funded", "needs_review"].includes(load.status))
     throw new AgentRefusal("not_cancellable", load.status === "paid" ? "The carrier is already paid; a paid load can't be cancelled." : "This load can't be cancelled right now.");
   const config = await appConfig();
-  const { atomic } = await (await gateway()).balance(load.wallet.agentId!, config.payoutAsset);
+  const atomic = await walletBalance(load);
   if (BigInt(atomic) === 0n) {
     await store.transition(load.id, [load.status], "cancelled");
     await store.addEvent(load.id, "company", "cancelled", "Company cancelled the load. The wallet was empty, so nothing to refund.");
